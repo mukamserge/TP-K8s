@@ -1,0 +1,53 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: sql.db.local.tp-perso.io
+  labels:
+    type: dev
+    provider: local
+    kind: sql
+spec:
+  writeConnectionSecretsToNamespace: tp-perso
+  compositeTypeRef:
+    apiVersion: tp-perso.io/v1alpha1
+    kind: Database
+  resources:  
+    - name: mariadb-helm-release
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        metadata:
+          annotations: {}
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: tp-perso
+            chart:
+              name: mariadb
+              repository: https://charts.bitnami.com/bitnami
+              version: "18.2.0"
+            values:
+              image:
+                debug: true
+              primary: 
+                persistence:
+                  size: 1Gi
+              auth: 
+                username: "bn_wordpress"
+                database: "bitnami_wordpress"
+                password: "bn_wordpress_pass"
+          providerConfigRef:
+            name: default
+      patches:
+        - fromFieldPath: metadata.name
+          type: FromCompositeFieldPath
+          toFieldPath: metadata.annotations[crossplane.io/external-name]
+          policy:
+            fromFieldPath: Required
+        - fromFieldPath: metadata.name
+          type: FromCompositeFieldPath
+          toFieldPath: metadata.name
+      readinessChecks:
+      - type: MatchString
+        fieldPath: status.atProvider.state
+        matchString: deployed

@@ -1,0 +1,10 @@
+apiVersion: tp-perso.io/v1alpha1
+kind: Database
+metadata:
+  name: tp-perso-db
+spec:
+  compositionSelector:
+    matchLabels:
+      provider: local
+      type: dev
+      kind: sql

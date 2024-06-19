@@ -1,0 +1,13 @@
+apiVersion: tp-perso.io/v1alpha1
+kind: Environment
+metadata:
+  name: tp-perso-env
+spec:
+  writeConnectionSecretToRef:
+    name: tp-perso
+  compositionSelector:
+    matchLabels:
+      type: development
+  parameters: 
+    installInfra: false
+    

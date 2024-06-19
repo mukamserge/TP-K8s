@@ -1,0 +1,157 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: dev.env.tp-perso.io
+  labels:
+    type: development
+spec:
+  writeConnectionSecretsToNamespace: tp-perso
+  compositeTypeRef:
+    apiVersion: tp-perso.io/v1alpha1
+    kind: XEnvironment
+  resources:
+    - name: vcluster-helm-release
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        metadata:
+          annotations: {}
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: tp-perso
+            chart:
+              name: vcluster
+              repository: https://charts.loft.sh
+              version: "0.19.5"
+            values:
+              service:
+                type: NodePort
+              fallbackHostDns: true
+              multiNamespaceMode:
+                enabled: false
+              ingress:
+                enabled: true
+                ingressClassName: nginx
+                host: tp-perso-vcluster.local.com
+              sync:
+                ingresses:
+                  enabled: true
+              storage:
+                persistence: false
+              syncer:
+                extraArgs: [] # patched
+              #     - --out-kube-config-server=https://cluster-1.cluster-1.svc
+          providerConfigRef:
+            name: default
+      patches:
+        - fromFieldPath: metadata.name
+          type: FromCompositeFieldPath
+          toFieldPath: metadata.annotations[crossplane.io/external-name]
+          policy:
+            fromFieldPath: Required
+        - fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-vcluster"
+                type: Format
+          type: FromCompositeFieldPath
+        - type: CombineFromComposite
+          combine:
+            variables:
+            - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "--out-kube-config-secret=%s-secret"
+          toFieldPath: spec.forProvider.values.syncer.extraArgs[0]
+        - type: CombineFromComposite
+          combine:
+            variables:
+            - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "--out-kube-config-server=https://%s.tp-perso.svc"
+          toFieldPath: spec.forProvider.values.syncer.extraArgs[1]
+        - type: CombineFromComposite
+          combine:
+            variables:
+            - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "--tls-san=%s.tp-perso.svc"
+          toFieldPath: spec.forProvider.values.syncer.extraArgs[2]
+      readinessChecks:
+      - type: MatchString
+        fieldPath: status.atProvider.state
+        matchString: deployed
+    - name: helm-providerconfig
+      base:
+        apiVersion: helm.crossplane.io/v1alpha1
+        kind: ProviderConfig
+        spec:
+          credentials:
+            source: Secret
+            secretRef:
+              name: # patched
+              namespace: tp-perso
+              key: config
+      patches:
+        - fromFieldPath: metadata.name
+          toFieldPath: spec.credentials.secretRef.name
+          transforms:
+            - type: string
+              string:
+                fmt: vc-%s
+                type: Format
+          type: FromCompositeFieldPath
+        - fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+          type: FromCompositeFieldPath
+      readinessChecks:
+      - type: None
+    - name: tp-perso-app-chart-vcluster
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        metadata:
+          annotations:
+            crossplane.io/external-name: tp-perso-wordpress
+        spec:
+          forProvider:
+            chart:
+              name: wordpress
+              repository: oci://registry-1.docker.io/bitnamicharts
+              version: "22.4.0"
+            values:
+              service:
+                type: ClusterIP
+              persistence:
+                size: 1Gi
+              ingress:
+                enabled: true
+                ingressClassName: "nginx"
+                hostname: tp-perso-wordpress.local.com
+              mariadb:
+                enabled: false
+              externalDatabase:
+                host: tp-perso-db-mariadb.tp-perso.svc.cluster.local
+                port: 3306
+                user: bn_wordpress
+                password: "bn_wordpress_pass"
+                database: bitnami_wordpress
+              wordpressConfigureCache: true
+              externalCache:
+                host: tp-perso-cache-memcached.tp-perso.svc.cluster.local
+            namespace: default
+          providerConfigRef:
+            name: #patched
+      patches:
+        - fromFieldPath: metadata.name
+          toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+      readinessChecks:
+      - type: MatchString
+        fieldPath: status.atProvider.state
+        matchString: deployed

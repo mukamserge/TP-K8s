@@ -1,0 +1,52 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: cache.db.local.tp-perso.io
+  labels:
+    type: dev
+    provider: local
+    kind: cache
+spec:
+  writeConnectionSecretsToNamespace: tp-perso
+  compositeTypeRef:
+    apiVersion: tp-perso.io/v1alpha1
+    kind: Database
+  resources:
+    - name: memcached-helm-release
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        metadata:
+          metadata:
+          annotations: {}
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: tp-perso
+            chart:
+              name: memcached
+              repository: https://charts.bitnami.com/bitnami
+              version: "7.4.1"
+            values:
+              persistence:
+                size: 1Gi
+          providerConfigRef:
+            name: default
+      patches:
+        - fromFieldPath: metadata.name
+          type: FromCompositeFieldPath
+          toFieldPath: metadata.annotations[crossplane.io/external-name]
+          policy:
+            fromFieldPath: Required
+        - fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s"   
+                type: Format
+          type: FromCompositeFieldPath   
+      readinessChecks:
+      - type: MatchString
+        fieldPath: status.atProvider.state
+        matchString: deployed
